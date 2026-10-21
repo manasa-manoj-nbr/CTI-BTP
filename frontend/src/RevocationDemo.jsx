@@ -154,7 +154,7 @@ export default function RevocationDemo() {
             <select value={selectedPolicy} onChange={e => setSelectedPolicy(e.target.value)}>
               <option value="">Select...</option>
               {(() => {
-                const sectors = [...new Set(orgList.map(o => (o.attributes || []).find(a => a.startsWith("SECTOR:"))?.split(":")[1]).filter(Boolean))];
+                const sectors = ["FINANCE", "HEALTHCARE", "EDUCATION", "TECHNOLOGY", "GOVERNMENT", "ENERGY"];
                 const policies = [];
                 for (const s of sectors) {
                   policies.push(`(SECTOR:${s} AND TRUST:HIGH)`);
@@ -174,9 +174,8 @@ export default function RevocationDemo() {
           <div className="rd-encrypt-result">
             <div className="rd-meta">
               <span><strong>Record:</strong> {encryptResult.record_id}</span>
-              <span><strong>Policy:</strong> <code>{encryptResult.policy}</code></span>
-              <span><strong>Public names:</strong> {encryptResult.public_names?.join(", ")}</span>
-              <span><strong>Values hidden:</strong> Yes (policy hiding)</span>
+              <span><strong>Policy:</strong> Hidden (PR-RABE policy hiding)</span>
+              <span><strong>Encryption:</strong> Completed</span>
               <span><strong>Time:</strong> {encryptResult.elapsed_ms} ms</span>
             </div>
           </div>
@@ -196,18 +195,18 @@ export default function RevocationDemo() {
                 <div key={org.org_id} className={`rd-org-row ${result ? (result.success ? "granted" : "denied") : ""}`}>
                   <div className="rd-org-info">
                     <strong>{org.org_name}</strong>
-                    <small>{org.attributes?.join(", ")}</small>
+                    <small>{org.org_name}'s attributes are private</small>
                   </div>
                   <div className="rd-org-result">
                     {result ? (
                       result.success ? (
-                        <span className="rd-badge granted"><ShieldCheck size={14} /> ACCESS</span>
+                        <span className="rd-badge granted"><ShieldCheck size={14} /> DECRYPTED</span>
                       ) : (
-                        <span className="rd-badge denied"><ShieldOff size={14} /> BLOCKED — {result.reason}</span>
+                        <span className="rd-badge denied"><ShieldOff size={14} /> BLOCKED</span>
                       )
                     ) : (
                       <button className="rd-btn small" onClick={() => doDecryptOrg(org.org_id)} disabled={busy}>
-                        <Key size={12} /> Try Decrypt
+                        <Key size={12} /> Attempt Decryption
                       </button>
                     )}
                     {result?.elapsed_ms && <small className="rd-timing">{result.elapsed_ms} ms</small>}
@@ -238,9 +237,7 @@ export default function RevocationDemo() {
               {(() => {
                 const allAttrs = new Set();
                 orgList.forEach(o => (o.attributes || []).forEach(a => allAttrs.add(a)));
-                if (allAttrs.size === 0) {
-                  ["TRUST:HIGH", "TRUST:MEDIUM", "TRUST:LOW"].forEach(a => allAttrs.add(a));
-                }
+                ["TRUST:HIGH", "TRUST:MEDIUM", "TRUST:LOW"].forEach(a => allAttrs.add(a));
                 return [...allAttrs].sort().map(a => <option key={a} value={a}>{a}</option>);
               })()}
               </select>
@@ -254,9 +251,8 @@ export default function RevocationDemo() {
             <div className="rd-revoke-result">
               <div className="rd-meta">
                 <span><strong>Org:</strong> {revokeResult.org_name}</span>
-                <span><strong>Attribute:</strong> {revokeResult.attribute}</span>
-                <span><strong>AGK Version:</strong> v{revokeResult.new_agk_version}</span>
-                <span><strong>Records re-encrypted:</strong> {revokeResult.records_reencrypted}</span>
+                <span><strong>Access group:</strong> Rotated</span>
+                <span><strong>Protected records:</strong> Updated</span>
                 <span><strong>Time:</strong> {revokeResult.elapsed_ms} ms</span>
               </div>
               <p className="rd-revoke-note">
@@ -264,25 +260,6 @@ export default function RevocationDemo() {
               </p>
             </div>
           )}
-        </div>
-      )}
-
-      {/* ── AGK Status ── */}
-      {Object.keys(status?.agk_groups || {}).length > 0 && (
-        <div className="rd-card">
-          <div className="rd-card-head"><Database size={18} /><h3>AGK Group Status</h3></div>
-          <table className="rd-agk-table">
-            <thead><tr><th>Attribute</th><th>Version</th><th>Members</th></tr></thead>
-            <tbody>
-              {Object.entries(status.agk_groups).map(([attr, info]) => (
-                <tr key={attr}>
-                  <td><code>{attr}</code></td>
-                  <td>v{info.version}</td>
-                  <td>{info.member_count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
 

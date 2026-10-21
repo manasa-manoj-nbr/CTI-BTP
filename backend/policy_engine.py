@@ -222,6 +222,19 @@ def policy_to_string(policy):
     return " AND ".join(parts)
 
 
+def _hide_policy_values(policy):
+    """Show attribute names but hide values — preserves PR-RABE policy hiding."""
+    if policy is None:
+        return "NONE"
+    import re
+    parts = []
+    for clause in policy:
+        hidden = [re.sub(r":.*", ":***", attr) for attr in clause]
+        text = " OR ".join(hidden)
+        parts.append(f"({text})" if len(clause) > 1 else text)
+    return " AND ".join(parts)
+
+
 def satisfies(attributes, policy):
     """True iff the attribute set satisfies every clause of the policy."""
     if policy is None:
@@ -800,10 +813,9 @@ def _decide(organization_id, org_state, policy, sensitivity, owners):
     missing = missing_clauses(org_state["attributes"], policy)
     if missing:
         return "DENY", (
-            f"{sensitivity} CTI requires {policy_to_string(policy)}; "
-            f"organization lacks {' and '.join(missing)}"
+            f"{sensitivity} CTI requires attributes your organization does not satisfy"
         ), missing
-    return "ALLOW", f"Organization attributes satisfy {policy_to_string(policy)}", []
+    return "ALLOW", f"Organization attributes satisfy the required policy", []
 
 
 def _log_access(organization_id, record_id, record_type, decision, reason):
@@ -818,32 +830,16 @@ def _log_access(organization_id, record_id, record_type, decision, reason):
 def _response(organization, org_state, record_id, record_type, sharing,
               risk_score, risk_level, sensitivity, policy, reasons,
               decision, reason, missing):
-    attributes = sorted(org_state["attributes"])
     return {
         "decision": decision,
-        "reason": reason,
+        "reason": (
+            "Access granted."
+            if decision == "ALLOW"
+            else "Organization does not satisfy the access requirements."
+        ),
         "organization_id": organization["id"],
         "indicator_id": record_id,
         "record_type": record_type,
-        "trust_score": organization["trust_score"],
-        "trust_level": org_state["trust_level"],
-        "risk_score": risk_score,
-        "risk_level": risk_level,
-        "sharing_sector": sharing,
-        "organization_active": bool(organization["is_active"]),
-        "sensitivity": sensitivity,
-        "policy_string": policy_to_string(policy),
-        "attributes": attributes,
-        "missing": missing,
-        "classification": reasons,
-        # Flat strings so the Access Control page can render them as rows.
-        "policy": {
-            "Sensitivity": sensitivity,
-            "Required policy": policy_to_string(policy),
-            "Organization attributes": ", ".join(attributes) or "none",
-            "Trust level": org_state["trust_level"],
-            "Classified by": "; ".join(reasons),
-        },
     }
 
 

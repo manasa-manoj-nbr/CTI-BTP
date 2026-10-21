@@ -8,6 +8,7 @@ export default function AccessControl() {
   const [records, setRecords] = useState([]);
   const [selectedOrg, setSelectedOrg] = useState("");
   const [selectedRecord, setSelectedRecord] = useState("");
+  const [userOrg, setUserOrg] = useState(null);
   
   const [evaluating, setEvaluating] = useState(false);
   const [decision, setDecision] = useState(null);
@@ -24,15 +25,24 @@ export default function AccessControl() {
         }
         const headers = { Authorization: `Bearer ${token}` };
 
-        const [orgRes, recRes, logRes] = await Promise.all([
+        const [orgRes, recRes, logRes, meRes] = await Promise.all([
           fetch(`${API_BASE_URL}/api/organizations`, { headers }),
           fetch(`${API_BASE_URL}/api/cti/advanced`, { headers }),
-          fetch(`${API_BASE_URL}/api/audit-logs`, { headers })
+          fetch(`${API_BASE_URL}/api/audit-logs`, { headers }),
+          fetch(`${API_BASE_URL}/api/auth/me`, { headers }),
         ]);
 
         const orgData = await orgRes.json();
         const recData = await recRes.json();
         const logData = await logRes.json();
+
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          if (meData.organization) {
+            setUserOrg(meData.organization);
+            setSelectedOrg(String(meData.organization.id));
+          }
+        }
 
         // Parse Organizations
         if (orgData.organizations) {
@@ -99,17 +109,11 @@ export default function AccessControl() {
 
       setDecision({
         granted: isGranted,
-        reason: data.reason || (isGranted ? "Policy requirements met." : "Policy requirements not met."),
-        details: data.policy || data.details || {},
-        trust_score: data.trust_score,
-        trust_level: data.trust_level,
-        sensitivity: data.sensitivity,
-        policy_string: data.policy_string,
-        classification: data.classification,
-        attributes: data.attributes,
-        missing: data.missing,
-        risk_level: data.risk_level,
-        risk_score: data.risk_score,
+        reason: data.reason || (
+          isGranted
+            ? "Access granted."
+            : "Organization does not satisfy the access requirements."
+        ),
       });
 
       const logRes = await fetch(`${API_BASE_URL}/api/audit-logs`, { headers: { Authorization: `Bearer ${token}` } });
@@ -128,8 +132,8 @@ export default function AccessControl() {
   return (
     <div className="ac-page">
       <div className="ac-header">
-        <h2>Adaptive Access Control</h2>
-        <p>Evaluate sharing policies based on organization trust, threat severity, and adaptive risk rules.</p>
+        <h2>Privacy-Preserving Access Control</h2>
+        <p>Evaluate your organization's access to shared CTI.</p>
       </div>
 
       <div className="ac-grid">
@@ -142,14 +146,9 @@ export default function AccessControl() {
           <form className="ac-form" onSubmit={handleEvaluate}>
             <label>
               Requesting Organization
-              <select value={selectedOrg} onChange={e => setSelectedOrg(e.target.value)} required>
-                <option value="">Select organization...</option>
-                {organizations.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name} ({o.sector})
-                  </option>
-                ))}
-              </select>
+              <div className="ac-org-display">
+                {userOrg ? `${userOrg.name} (${userOrg.sector})` : "Loading..."}
+              </div>
             </label>
 
             <label>
@@ -179,32 +178,6 @@ export default function AccessControl() {
               </div>
               <p className="ac-reason">{decision.reason}</p>
 
-              <div className="ac-details">
-                <h4>Access Decision Context:</h4>
-                <ul>
-                  {decision.sensitivity && (
-                    <li><strong>Sensitivity (FIPS 199):</strong> {decision.sensitivity}</li>
-                  )}
-                  {decision.policy_string && (
-                    <li><strong>Required Policy (LSSS):</strong> <code>{decision.policy_string}</code></li>
-                  )}
-                  {decision.trust_score !== undefined && (
-                    <li><strong>Trust:</strong> {decision.trust_score}/100 — {decision.trust_level}</li>
-                  )}
-                  {decision.attributes && decision.attributes.length > 0 && (
-                    <li><strong>Org Attributes:</strong> <code>{decision.attributes.join(", ")}</code></li>
-                  )}
-                  {decision.missing && decision.missing.length > 0 && (
-                    <li><strong>Missing:</strong> <code>{decision.missing.join(", ")}</code></li>
-                  )}
-                  {decision.risk_level && (
-                    <li><strong>Risk Level:</strong> {decision.risk_level}{decision.risk_score != null ? ` (score: ${decision.risk_score})` : ""}</li>
-                  )}
-                  {decision.classification && decision.classification.length > 0 && (
-                    <li><strong>Classification:</strong> {decision.classification.join("; ")}</li>
-                  )}
-                </ul>
-              </div>
             </div>
           )}
         </div>

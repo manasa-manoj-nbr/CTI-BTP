@@ -15,7 +15,9 @@ On Windows, a graceful fallback returns 503 if the library is missing.
 import json
 import traceback
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
+
+from backend.authentication import require_auth
 
 crypto_bp = Blueprint("crypto", __name__, url_prefix="/api/crypto")
 
@@ -81,6 +83,7 @@ def crypto_status():
 # --------------------------------------------------
 
 @crypto_bp.route("/setup", methods=["POST"])
+@require_auth
 @_require_crypto
 def crypto_setup():
     data = request.get_json(silent=True) or {}
@@ -111,6 +114,7 @@ def crypto_setup():
 # --------------------------------------------------
 
 @crypto_bp.route("/keygen", methods=["POST"])
+@require_auth
 @_require_crypto
 def crypto_keygen():
     if _state["crs"] is None:
@@ -158,6 +162,7 @@ def crypto_keygen():
 # --------------------------------------------------
 
 @crypto_bp.route("/aggregate", methods=["POST"])
+@require_auth
 @_require_crypto
 def crypto_aggregate():
     if _state["crs"] is None:
@@ -201,6 +206,7 @@ def crypto_aggregate():
 # --------------------------------------------------
 
 @crypto_bp.route("/encrypt", methods=["POST"])
+@require_auth
 @_require_crypto
 def crypto_encrypt():
     if _state["owner"] is None:
@@ -247,6 +253,7 @@ def crypto_encrypt():
 # --------------------------------------------------
 
 @crypto_bp.route("/decrypt", methods=["POST"])
+@require_auth
 @_require_crypto
 def crypto_decrypt():
     if _state["owner"] is None:
@@ -287,6 +294,7 @@ def crypto_decrypt():
 # --------------------------------------------------
 
 @crypto_bp.route("/revoke", methods=["POST"])
+@require_auth
 @_require_crypto
 def crypto_revoke():
     if _state["owner"] is None:
@@ -320,6 +328,7 @@ def crypto_revoke():
 # --------------------------------------------------
 
 @crypto_bp.route("/demo", methods=["POST"])
+@require_auth
 @_require_crypto
 def crypto_demo():
     """Run a complete PR-RABE demo: setup, keygen, aggregate, encrypt, decrypt, revoke."""

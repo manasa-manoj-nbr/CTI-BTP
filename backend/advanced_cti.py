@@ -239,10 +239,14 @@ def submission_stats(connection, record_id):
 # --------------------------------------------------
 
 @advanced_cti_bp.route("/api/cti/submit", methods=["POST"])
+@require_auth
 def submit_cti():
     c, problem = parse_submission(request.get_json(silent=True))
     if problem:
         return error(problem)
+
+    if c["organization_id"] != g.current_user["organization_id"]:
+        return error("You can only submit CTI for your own organization", 403)
 
     with closing(get_connection()) as connection:
         try:
@@ -389,19 +393,35 @@ def submit_cti():
 def list_advanced_cti():
     limit = min(max(request.args.get("limit", default=100, type=int), 1), 500)
     offset = max(request.args.get("offset", default=0, type=int), 0)
+    org_id = request.args.get("organization_id", default=None, type=int)
 
     with closing(get_connection()) as connection:
-        rows = connection.execute(
-            """
-            SELECT id, category, indicator_type, indicator_value, title,
-                   description, severity, confidence, sharing_sector,
-                   stix_data, risk_score, risk_level, status, created_at
-            FROM cti_records
-            ORDER BY id DESC
-            LIMIT ? OFFSET ?
-            """,
-            (limit, offset),
-        ).fetchall()
+        if org_id:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT r.id, r.category, r.indicator_type, r.indicator_value, r.title,
+                       r.description, r.severity, r.confidence, r.sharing_sector,
+                       r.stix_data, r.risk_score, r.risk_level, r.status, r.created_at
+                FROM cti_records r
+                JOIN cti_submissions s ON s.cti_record_id = r.id
+                WHERE s.organization_id = ?
+                ORDER BY r.id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (org_id, limit, offset),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """
+                SELECT id, category, indicator_type, indicator_value, title,
+                       description, severity, confidence, sharing_sector,
+                       stix_data, risk_score, risk_level, status, created_at
+                FROM cti_records
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            ).fetchall()
 
     return jsonify({
         "records": [dict(row) for row in rows],

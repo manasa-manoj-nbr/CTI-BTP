@@ -196,11 +196,9 @@ def _decrypt_v2(bundle, user_attributes, trust_score):
     org_attrs = _org_attributes(user_attributes, trust_score)
 
     if not required_attrs.issubset(org_attrs):
-        missing = required_attrs - org_attrs
         return {
             "success": False,
-            "reason": f"Attribute mismatch: missing {', '.join(sorted(missing))}. "
-                      f"Your attributes: {', '.join(sorted(org_attrs))}.",
+            "reason": "Access denied.",
             "trust_score": trust_score,
         }
 
@@ -224,7 +222,6 @@ def _decrypt_v2(bundle, user_attributes, trust_score):
         "success": True,
         "data": payload.get("data"),
         "trust_score": trust_score,
-        "policy": bundle.get("policy_display", ""),
         "encrypted_at": payload.get("encrypted_at"),
     }
 

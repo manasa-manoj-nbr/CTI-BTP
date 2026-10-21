@@ -180,6 +180,8 @@ button {
   flex: 1;
   min-width: 0;
   margin-left: 240px;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .topbar {

@@ -37,17 +37,22 @@ export default function CryptoSharing() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [meRes, ctiRes, statusRes] = await Promise.all([
+        const [meRes, statusRes] = await Promise.all([
           fetch(`${API_BASE_URL}/api/auth/me`, { headers }),
-          fetch(`${API_BASE_URL}/api/cti/advanced`, { headers }),
           fetch(`${API_BASE_URL}/api/prrabe/status`, { headers }).catch(() => null),
         ]);
 
+        let myOrg = null;
         if (meRes.ok) {
           const meData = await meRes.json();
-          setUserOrg(meData.organization || null);
+          myOrg = meData.organization || null;
+          setUserOrg(myOrg);
         }
 
+        const ctiUrl = myOrg
+          ? `${API_BASE_URL}/api/cti/advanced?organization_id=${myOrg.id}`
+          : `${API_BASE_URL}/api/cti/advanced`;
+        const ctiRes = await fetch(ctiUrl, { headers });
         if (ctiRes.ok) {
           const ctiData = await ctiRes.json();
           setCtiRecords(ctiData.records || (Array.isArray(ctiData) ? ctiData : []));
@@ -99,7 +104,7 @@ export default function CryptoSharing() {
       const data = await res.json();
 
       if (res.ok) {
-        setEncryptMsg(`Encrypted with PR-RABE. Policy: ${data.policy || "default"}. Took ${data.elapsed_ms}ms.`);
+        setEncryptMsg(`Encrypted with PR-RABE. Took ${data.elapsed_ms}ms.`);
         await loadEncryptedRecords();
         const statusRes = await fetch(`${API_BASE_URL}/api/prrabe/status`, { headers });
         if (statusRes.ok) setPrrabeStatus(await statusRes.json());
@@ -132,11 +137,10 @@ export default function CryptoSharing() {
         setDecryptedData(data.data);
         setDecryptMeta({
           org_name: data.org_name,
-          attributes: data.attributes,
           elapsed_ms: data.elapsed_ms,
         });
       } else {
-        setErrorMsg(data.reason || data.error || "Access denied — your attributes do not satisfy the policy.");
+        setErrorMsg(data.reason || data.error || "Organization does not satisfy the access requirements.");
       }
     } catch (e) {
       setErrorMsg(`Decryption failed: ${e.message}`);
@@ -165,7 +169,7 @@ export default function CryptoSharing() {
         setErrorMsg("");
         setDecryptedData(null);
         setDecryptMeta(null);
-        setEncryptMsg(`Revoked: ${trustAttr}. AGK rotated to v${data.new_agk_version}. ${data.records_reencrypted} record(s) re-encrypted.`);
+        setEncryptMsg(`Attribute revoked. AGK rotated to v${data.new_agk_version}. ${data.records_reencrypted} record(s) re-encrypted.`);
         const statusRes = await fetch(`${API_BASE_URL}/api/prrabe/status`, { headers });
         if (statusRes.ok) setPrrabeStatus(await statusRes.json());
       } else {
@@ -317,7 +321,7 @@ export default function CryptoSharing() {
                 <option value="">Choose an encrypted record to decrypt...</option>
                 {encryptedRecords.map(r => (
                   <option key={r.id} value={r.id}>
-                    {r.title} ({r.severity}) — Policy: {r.policy_display} — by {r.encrypted_by_org}
+                    {r.title} ({r.severity}) — by {r.encrypted_by_org}
                   </option>
                 ))}
               </select>
@@ -334,7 +338,6 @@ export default function CryptoSharing() {
                   <div><strong>Severity:</strong> <span className={`sev-badge sev-${selectedEnc.severity}`}>{selectedEnc.severity}</span></div>
                   <div><strong>Category:</strong> {selectedEnc.category}</div>
                   <div><strong>Sector:</strong> {selectedEnc.sharing_sector}</div>
-                  <div><strong>LSSS Policy:</strong> <code>{selectedEnc.policy_display}</code></div>
                   <div><strong>Encrypted by:</strong> {selectedEnc.encrypted_by_org}</div>
                   <div><strong>At:</strong> {new Date(selectedEnc.created_at).toLocaleString()}</div>
                 </div>
@@ -379,7 +382,6 @@ export default function CryptoSharing() {
                 <div className="decrypt-meta">
                   <small>
                     Decrypted as: {decryptMeta.org_name} |
-                    Attributes: {decryptMeta.attributes?.join(", ")} |
                     Time: {decryptMeta.elapsed_ms}ms
                   </small>
                 </div>

@@ -10,6 +10,7 @@
 .kc-flash { padding: 12px 16px; border-radius: 10px; font-size: 13px; display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
 .kc-flash.success { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #6ee7b7; }
 .kc-flash.error { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; }
+.kc-flash.info { background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); color: #a5b4fc; }
 
 /* Stepper */
 .kc-stepper { display: flex; align-items: center; gap: 4px; margin-bottom: 24px; padding: 16px; background: rgba(30, 27, 56, 0.95); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.06); }
@@ -30,6 +31,7 @@
 
 .kc-badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
 .kc-badge.done { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; }
+.kc-badge.pending { background: rgba(234, 179, 8, 0.15); color: #fbbf24; font-style: italic; }
 
 .kc-meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: #94a3b8; padding: 12px 0 0; border-top: 1px solid rgba(255, 255, 255, 0.06); }
 .kc-meta span { display: flex; align-items: center; gap: 4px; }

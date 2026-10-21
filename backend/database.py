@@ -167,6 +167,7 @@ def initialize_database():
         connection.execute("""
             CREATE TABLE IF NOT EXISTS audit_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                organization_id INTEGER,
                 organization_name TEXT NOT NULL,
                 record_value TEXT NOT NULL,
                 decision TEXT NOT NULL,
@@ -184,6 +185,18 @@ def initialize_database():
                 key_version INTEGER NOT NULL DEFAULT 1
             )
         """)
+
+        audit_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(audit_logs)"
+            ).fetchall()
+        }
+        if "organization_id" not in audit_columns:
+            connection.execute("""
+                ALTER TABLE audit_logs
+                ADD COLUMN organization_id INTEGER
+            """)
 
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp

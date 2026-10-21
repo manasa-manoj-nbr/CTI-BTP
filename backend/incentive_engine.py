@@ -71,10 +71,26 @@ def _transact(org_id, amount, reason, reference_id=None):
 
 
 def reward_share(org_id, record_id=None):
+    if record_id is not None:
+        with get_connection() as conn:
+            existing = conn.execute(
+                "SELECT id FROM incentive_transactions WHERE organization_id = ? AND reason = ? AND reference_id = ?",
+                (org_id, "shared_cti", str(record_id)),
+            ).fetchone()
+            if existing:
+                return {"org_id": org_id, "amount": 0, "reason": "already_rewarded", "balance": None}
     return _transact(org_id, REWARD_SHARE, "shared_cti", str(record_id))
 
 
 def reward_high_confidence(org_id, record_id=None):
+    if record_id is not None:
+        with get_connection() as conn:
+            existing = conn.execute(
+                "SELECT id FROM incentive_transactions WHERE organization_id = ? AND reason = ? AND reference_id = ?",
+                (org_id, "high_confidence_bonus", str(record_id)),
+            ).fetchone()
+            if existing:
+                return {"org_id": org_id, "amount": 0, "reason": "already_rewarded", "balance": None}
     return _transact(org_id, REWARD_HIGH_CONFIDENCE, "high_confidence_bonus",
                      str(record_id))
 

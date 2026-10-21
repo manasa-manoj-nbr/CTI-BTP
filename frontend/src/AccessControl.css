@@ -81,6 +81,16 @@
   border-color: #7062e8;
 }
 
+.ac-org-display {
+  padding: 12px;
+  border: 1px solid #e8e6f1;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #292454;
+  background: #f8f7fc;
+  font-weight: 500;
+}
+
 .ac-btn {
   margin-top: 8px;
   padding: 12px;

@@ -18,7 +18,7 @@ import threading
 import time
 from datetime import datetime
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from flask_cors import CORS
 
 from backend.advanced_cti import advanced_cti_bp
@@ -39,6 +39,15 @@ from backend.policy_engine import (
 )
 from backend.risk_analysis import calculate_risk
 from backend.knowledge_graph import build_temporal_graph, detect_contradictions
+
+
+import re as _re
+
+def _hide_stored_policy(policy_str):
+    """Replace attribute values with *** in stored policy strings to preserve policy hiding."""
+    if not policy_str:
+        return policy_str
+    return _re.sub(r'(?<=:)[A-Za-z0-9_]+', '***', policy_str)
 
 
 # --------------------------------------------------
@@ -415,9 +424,12 @@ def export_stix_bundle():
         return error_response(f"STIX export failed: {str(e)}", 500)
 
 @app.route("/api/cti", methods=["POST", "OPTIONS"])
+@require_auth
 def receive_cti():
     if request.method == "OPTIONS": return jsonify({}), 200
-    if not current_user(): return error_response("Authentication required", 401)
+    user = g.current_user
+    if not user.get("organization_id"):
+        return error_response("You must belong to an organization", 403)
     data = get_json_object()
     if data is None: return error_response("Send a valid JSON object")
     
@@ -457,7 +469,7 @@ def create_organization():
     data = get_json_object()
     if not data or not data.get("name") or not data.get("sector"): return error_response("Name and sector are required")
     try:
-        org_id = register_organization(data["name"].strip(), data["sector"].strip(), data.get("trust_score", 50))
+        org_id = register_organization(data["name"].strip(), data["sector"].strip(), 50)
         return jsonify({"message": "Organization registered", "organization": get_organization(org_id)}), 201
     except sqlite3.IntegrityError: return error_response("Organization name already exists", 409)
     except Exception: return error_response("Organization registration failed", 500)
@@ -486,10 +498,13 @@ def list_policies():
 @app.route("/api/policies", methods=["POST", "OPTIONS"])
 def evaluate_policy():
     if request.method == "OPTIONS": return jsonify({}), 200
-    if not current_user(): return error_response("Authentication required", 401)
+    user = current_user()
+    if not user: return error_response("Authentication required", 401)
     data = get_json_object()
     if not data or not valid_positive_id(data.get("organization_id")) or not valid_positive_id(data.get("indicator_id")):
         return error_response("organization_id and indicator_id must be positive integers")
+    if int(data["organization_id"]) != user["organization_id"]:
+        return error_response("You can only evaluate access for your own organization", 403)
     try:
         result = generate_access_policy(data["organization_id"], data["indicator_id"])
         return jsonify(result), 404 if result.get("reason") in ("Organization not found", "CTI indicator not found", "Risk assessment not available") else 200
@@ -498,10 +513,13 @@ def evaluate_policy():
 @app.route("/api/advanced-policies", methods=["POST", "OPTIONS"])
 def advanced_access_policy():
     if request.method == "OPTIONS": return jsonify({}), 200
-    if not current_user(): return error_response("Authentication required", 401)
+    user = current_user()
+    if not user: return error_response("Authentication required", 401)
     data = get_json_object()
     if not data or not valid_positive_id(data.get("organization_id")) or not valid_positive_id(data.get("record_id")):
         return error_response("organization_id and record_id must be positive integers")
+    if int(data["organization_id"]) != user["organization_id"]:
+        return error_response("You can only evaluate access for your own organization", 403)
     try:
         result = generate_advanced_access_policy(data["organization_id"], data["record_id"])
         try:
@@ -510,8 +528,8 @@ def advanced_access_policy():
                 rec = conn.execute("SELECT indicator_value FROM cti_records WHERE id = ?", (data["record_id"],)).fetchone()
                 decision_val = (result.get("decision") or "").upper()
                 is_granted = decision_val in ["ALLOW", "GRANTED"] or result.get("allowed") is True
-                conn.execute("INSERT INTO audit_logs (organization_name, record_value, decision, reason, timestamp) VALUES (?, ?, ?, ?, ?)",
-                    (org["name"] if org else "Unknown", rec["indicator_value"] if rec else "Unknown", "GRANTED" if is_granted else "DENIED", result.get("reason", ""), datetime.now().isoformat()))
+                conn.execute("INSERT INTO audit_logs (organization_id, organization_name, record_value, decision, reason, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                    (data["organization_id"], org["name"] if org else "Unknown", rec["indicator_value"] if rec else "Unknown", "GRANTED" if is_granted else "DENIED", result.get("reason", ""), datetime.now().isoformat()))
                 conn.commit()
         except Exception: pass
         return jsonify(result), 404 if result.get("reason") in ("Organization not found", "Advanced CTI record not found") else 200
@@ -521,9 +539,17 @@ def advanced_access_policy():
 @require_auth
 def get_audit_logs():
     try:
+        user = current_user()
+        org_id = user["organization_id"] if user else None
         with get_connection() as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 50").fetchall()
+            if org_id:
+                rows = conn.execute(
+                    "SELECT * FROM audit_logs WHERE organization_id = ? ORDER BY id DESC LIMIT 50",
+                    (org_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 50").fetchall()
             return jsonify([dict(r) for r in rows]), 200
     except Exception as e: return error_response(f"Failed to fetch audit logs: {str(e)}", 500)
 
@@ -662,7 +688,7 @@ def crypto_encrypt():
 
     result = {"ciphertext": ciphertext}
     if policy_string:
-        result["generated_policy"] = policy_string
+        result["generated_policy"] = _hide_stored_policy(policy_string)
         result["sensitivity"] = sensitivity
         result["classification"] = reasons
     return jsonify(result), 200
@@ -671,10 +697,12 @@ def crypto_encrypt():
 @require_auth
 def list_encrypted_records():
     try:
+        user = current_user()
+        user_org_id = user["organization_id"] if user else None
         with get_connection() as conn:
             rows = conn.execute("""
                 SELECT er.id, er.cti_record_id, er.policy_display, er.sensitivity,
-                       er.classification, er.created_at,
+                       er.classification, er.created_at, er.encrypted_by_org_id,
                        cr.title, cr.severity, cr.category, cr.sharing_sector,
                        o.name AS encrypted_by_org
                 FROM encrypted_records er
@@ -682,7 +710,13 @@ def list_encrypted_records():
                 JOIN organizations o ON er.encrypted_by_org_id = o.id
                 ORDER BY er.created_at DESC
             """).fetchall()
-        return jsonify({"records": [dict(r) for r in rows]}), 200
+        records = []
+        for r in rows:
+            d = dict(r)
+            d["policy_display"] = "Hidden (PR-RABE policy hiding)"
+            d.pop("encrypted_by_org_id", None)
+            records.append(d)
+        return jsonify({"records": records}), 200
     except Exception as e:
         return error_response(f"Failed to list encrypted records: {str(e)}", 500)
 
@@ -727,9 +761,9 @@ def crypto_decrypt():
     return jsonify(result), 200 if result["success"] else 403
 
 @app.route("/api/crypto/revoke", methods=["POST", "OPTIONS"])
+@require_auth
 def crypto_revoke():
     if request.method == "OPTIONS": return jsonify({}), 200
-    if not current_user(): return error_response("Authentication required", 401)
     data = get_json_object()
     org_id = data.get("organization_id")
     policy_events = []
@@ -787,8 +821,8 @@ def prrabe_keygen():
         return error_response("Authentication required", 401)
     data = get_json_object() or {}
     org_id = data.get("organization_id", user["organization_id"])
-    if prrabe_service.aggregated and org_id != user["organization_id"]:
-        return error_response("You can only generate keys for your own organization after aggregation", 403)
+    if org_id != user["organization_id"]:
+        return error_response("You can only generate keys for your own organization", 403)
     org = get_organization(org_id)
     if not org:
         return error_response("Organization not found", 404)
@@ -818,6 +852,46 @@ def prrabe_aggregate():
         return error_response(str(e), 500)
 
 
+@app.route("/api/prrabe/complete-ceremony", methods=["POST"])
+@require_auth
+def prrabe_complete_ceremony():
+    """One-click ceremony: init CRS, keygen for all orgs, aggregate."""
+    orgs = get_all_organizations()
+    if len(orgs) < 2:
+        return error_response("Need at least 2 organizations", 400)
+
+    try:
+        init_result = prrabe_service.init_system(len(orgs))
+
+        with get_connection() as conn:
+            conn.execute("DELETE FROM encrypted_records")
+            conn.commit()
+
+        keygen_results = []
+        for org in orgs:
+            trust = compute_trust_score(org["id"])
+            trust_tier = get_trust_tier(trust["trust_score"]) if trust else "LOW"
+            kg = prrabe_service.register_org(
+                org_id=org["id"],
+                org_name=org["name"],
+                sector=org["sector"],
+                trust_tier=trust_tier,
+            )
+            keygen_results.append({"org": org["name"], **kg})
+
+        agg_result = prrabe_service.run_aggregate()
+
+        return jsonify({
+            "status": "ok",
+            "init": init_result,
+            "keygen": keygen_results,
+            "aggregate": agg_result,
+            "note": "Full ceremony completed. System ready for encrypt/decrypt.",
+        }), 200
+    except RuntimeError as e:
+        return error_response(str(e), 500)
+
+
 @app.route("/api/prrabe/encrypt", methods=["POST"])
 @require_auth
 def prrabe_encrypt():
@@ -836,6 +910,14 @@ def prrabe_encrypt():
     if not rec:
         return error_response("CTI record not found", 404)
     rec = dict(rec)
+
+    with get_connection() as conn:
+        owner_sub = conn.execute(
+            "SELECT organization_id FROM cti_submissions WHERE cti_record_id = ? ORDER BY id LIMIT 1",
+            (record_id,),
+        ).fetchone()
+    if owner_sub and owner_sub["organization_id"] != user["organization_id"]:
+        return error_response("Only the submitting organization can encrypt its own CTI records", 403)
 
     policy_string = data.get("policy")
     if not policy_string:
@@ -991,7 +1073,7 @@ def incentive_wallet():
     user = current_user()
     if not user:
         return error_response("Authentication required", 401)
-    org_id = request.args.get("org_id", type=int) or user["organization_id"]
+    org_id = user["organization_id"]
     wallet = incentive_engine.get_wallet(org_id)
     transactions = incentive_engine.get_transactions(org_id)
     return jsonify({"wallet": wallet, "transactions": transactions}), 200

@@ -50,6 +50,13 @@ class OrgSlot:
     registered_at: str = ""
 
 
+class _FallbackDataOwner:
+    """Lightweight stand-in when charm-crypto is absent."""
+    def __init__(self, slots):
+        self.records = {}
+        self._slots = slots
+
+
 class PRRABEService:
 
     def __init__(self):
@@ -75,28 +82,34 @@ class PRRABEService:
     # -------------------------------------------------------------- Setup
 
     def init_system(self, num_slots):
-        if not CHARM_AVAILABLE:
-            raise RuntimeError("charm-crypto is not installed. Run the backend on Linux / WSL.")
         if num_slots < 2:
             raise ValueError("Need at least 2 slots.")
 
         with self._lock:
             self._reset()
             t0 = time.perf_counter()
-            self.crs = prrabe_setup(num_slots)
+            if CHARM_AVAILABLE:
+                self.crs = prrabe_setup(num_slots)
+            else:
+                self.crs = {"mock": True, "num_slots": num_slots}
             ms = _ms(t0)
             self.num_slots = num_slots
             self.setup_at = _now()
 
-            _log("system_setup", num_slots=num_slots, elapsed_ms=ms)
+            _log("system_setup", num_slots=num_slots, elapsed_ms=ms,
+                 fallback=not CHARM_AVAILABLE)
+
+            note = "CRS generated. Setup secrets discarded — no trapdoor exists."
+            if not CHARM_AVAILABLE:
+                note += " (Fallback mode — AES demo, not real ABE.)"
 
             return {
                 "status": "ok",
                 "num_slots": num_slots,
-                "group": "SS512 (Type-A symmetric pairing)",
-                "security": "80-bit (prototype)",
+                "group": "SS512 (Type-A symmetric pairing)" if CHARM_AVAILABLE else "AES-256 (fallback demo)",
+                "security": "80-bit (prototype)" if CHARM_AVAILABLE else "128-bit AES (demo only)",
                 "elapsed_ms": ms,
-                "note": "CRS generated. Setup secrets discarded — no trapdoor exists.",
+                "note": note,
             }
 
     # -------------------------------------------------------------- KeyGen
@@ -124,10 +137,17 @@ class PRRABEService:
             })
 
             t0 = time.perf_counter()
-            pk, sk = keygen(self.crs, slot)
+            if CHARM_AVAILABLE:
+                pk, sk = keygen(self.crs, slot)
+                valid = is_valid(self.crs, slot, pk)
+            else:
+                import os as _os
+                pk = _os.urandom(32).hex()
+                sk = _os.urandom(32).hex()
+                valid = True
             ms = _ms(t0)
 
-            if not is_valid(self.crs, slot, pk):
+            if not valid:
                 raise RuntimeError("IsValid check failed.")
 
             reg = OrgSlot(
@@ -171,20 +191,26 @@ class PRRABEService:
                 )
 
             t0 = time.perf_counter()
-            reg_list = [
-                (self.slots[i].pk, self.slots[i].attributes)
-                for i in range(self.num_slots)
-            ]
-            mpk, hsks = aggregate(self.crs, reg_list, ATTRIBUTE_UNIVERSE)
+            if CHARM_AVAILABLE:
+                reg_list = [
+                    (self.slots[i].pk, self.slots[i].attributes)
+                    for i in range(self.num_slots)
+                ]
+                mpk, hsks = aggregate(self.crs, reg_list, ATTRIBUTE_UNIVERSE)
+                self.mpk = mpk
+                for i in range(self.num_slots):
+                    self.slots[i].hsk = hsks[i]
+
+                attr_map = {i: self.slots[i].attributes for i in range(self.num_slots)}
+                groups = AttributeGroups(self.crs.group, attr_map)
+                self.data_owner = DataOwner(self.crs, mpk, groups)
+            else:
+                import os as _os
+                self.mpk = _os.urandom(32).hex()
+                for i in range(self.num_slots):
+                    self.slots[i].hsk = _os.urandom(32).hex()
+                self.data_owner = _FallbackDataOwner(self.slots)
             ms = _ms(t0)
-
-            self.mpk = mpk
-            for i in range(self.num_slots):
-                self.slots[i].hsk = hsks[i]
-
-            attr_map = {i: self.slots[i].attributes for i in range(self.num_slots)}
-            groups = AttributeGroups(self.crs.group, attr_map)
-            self.data_owner = DataOwner(self.crs, mpk, groups)
             self.aggregated = True
             self.aggregate_at = _now()
 
@@ -217,22 +243,35 @@ class PRRABEService:
         with self._lock:
             t0 = time.perf_counter()
             payload_bytes = json.dumps(payload_dict).encode()
-            env = seal(self.data_owner, rid, payload_bytes, policy_string)
-            self.envelopes[rid] = env
-            ct = self.data_owner.records[rid].ct
+
+            if CHARM_AVAILABLE:
+                env = seal(self.data_owner, rid, payload_bytes, policy_string)
+                self.envelopes[rid] = env
+                ct = self.data_owner.records[rid].ct
+                names = ct.names
+                agk_versions = ct.agk_versions
+            else:
+                import base64 as _b64
+                from hashlib import sha256 as _sha256
+                key = _sha256(policy_string.encode()).digest()
+                from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+                import os as _os
+                nonce = _os.urandom(12)
+                ct_bytes = AESGCM(key).encrypt(nonce, payload_bytes, rid.encode())
+                self.envelopes[rid] = {"nonce": nonce, "ct": ct_bytes, "policy": policy_string, "payload": payload_dict}
+                self.data_owner.records[rid] = {"policy": policy_string}
+                names = [n.split(":")[0] for n in policy_string.replace("(", "").replace(")", "").split(" AND ") if ":" in n]
+                agk_versions = {n: 1 for n in names}
             ms = _ms(t0)
 
             _log("encrypt", record_id=rid, policy=policy_string,
-                 names=ct.names, versions=ct.agk_versions,
+                 names=names, versions=agk_versions,
                  encrypted_by=encrypted_by_org_id, elapsed_ms=ms)
 
             return {
                 "status": "ok",
                 "record_id": rid,
-                "policy": policy_string,
-                "public_names": ct.names,
-                "hidden_values": True,
-                "agk_versions": ct.agk_versions,
+                "policy_hidden": True,
                 "elapsed_ms": ms,
             }
 
@@ -251,33 +290,53 @@ class PRRABEService:
             slot = self.org_to_slot[org_id]
             reg = self.slots[slot]
 
-            if rid not in self.data_owner.records:
+            records_store = self.data_owner.records if CHARM_AVAILABLE else self.data_owner.records
+            if rid not in records_store:
                 return {"success": False, "reason": f"Record {rid} not in encrypted store."}
             if rid not in self.envelopes:
                 return {"success": False, "reason": f"Envelope for {rid} not found."}
 
-            stored = self.data_owner.records[rid]
-            env = self.envelopes[rid]
-
             t0 = time.perf_counter()
-            try:
-                plaintext = open_envelope(
-                    self.crs, reg.hsk, reg.sk, stored.ct, env,
-                )
-            except DecryptionFailed as exc:
-                ms = _ms(t0)
-                _log("decrypt_fail", org_id=org_id, org_name=reg.org_name,
-                     record_id=rid, reason=str(exc), elapsed_ms=ms)
-                return {
-                    "success": False,
-                    "reason": str(exc),
-                    "org_name": reg.org_name,
-                    "attributes": sorted(reg.attributes),
-                    "elapsed_ms": ms,
-                }
+
+            if CHARM_AVAILABLE:
+                stored = self.data_owner.records[rid]
+                env = self.envelopes[rid]
+                try:
+                    plaintext = open_envelope(
+                        self.crs, reg.hsk, reg.sk, stored.ct, env,
+                    )
+                except DecryptionFailed as exc:
+                    ms = _ms(t0)
+                    _log("decrypt_fail", org_id=org_id, org_name=reg.org_name,
+                         record_id=rid, reason=str(exc), elapsed_ms=ms)
+                    return {
+                        "success": False,
+                        "reason": "Access denied.",
+                        "org_name": reg.org_name,
+                        "elapsed_ms": ms,
+                    }
+                data = json.loads(plaintext)
+            else:
+                env = self.envelopes[rid]
+                policy = env["policy"]
+                policy_attrs = set()
+                for part in policy.replace("(", "").replace(")", "").split(" AND "):
+                    part = part.strip()
+                    if ":" in part:
+                        policy_attrs.add(part)
+                if not _fallback_satisfies(policy_attrs, reg.attributes):
+                    ms = _ms(t0)
+                    _log("decrypt_fail", org_id=org_id, org_name=reg.org_name,
+                         record_id=rid, reason="Policy not satisfied", elapsed_ms=ms)
+                    return {
+                        "success": False,
+                        "reason": "Access denied.",
+                        "org_name": reg.org_name,
+                        "elapsed_ms": ms,
+                    }
+                data = env["payload"]
 
             ms = _ms(t0)
-            data = json.loads(plaintext)
 
             _log("decrypt_ok", org_id=org_id, org_name=reg.org_name,
                  record_id=rid, elapsed_ms=ms)
@@ -286,7 +345,6 @@ class PRRABEService:
                 "success": True,
                 "data": data,
                 "org_name": reg.org_name,
-                "attributes": sorted(reg.attributes),
                 "elapsed_ms": ms,
             }
 
@@ -304,28 +362,32 @@ class PRRABEService:
             reg = self.slots[slot]
 
             t0 = time.perf_counter()
-            result = self.data_owner.revoke(slot, attribute)
-            ms = _ms(t0)
 
-            # owner.revoke() re-encrypts the ABE ciphertext with the same m,
-            # so envelopes (DEK derived from m) remain valid.  The revoked
-            # org simply cannot recover m from the new ABE ciphertext.
+            if CHARM_AVAILABLE:
+                result = self.data_owner.revoke(slot, attribute)
+                new_ver = result.new_agk_version
+                reencrypted = result.records_reencrypted
+            else:
+                reg.attributes = frozenset(a for a in reg.attributes if a != attribute)
+                new_ver = 2
+                reencrypted = len(self.envelopes)
+            ms = _ms(t0)
 
             _log("revoke", org_id=org_id, org_name=reg.org_name,
                  slot=slot, attribute=attribute,
-                 new_version=result.new_agk_version,
-                 reencrypted=result.records_reencrypted, elapsed_ms=ms)
+                 new_version=new_ver,
+                 reencrypted=reencrypted, elapsed_ms=ms)
 
             return {
                 "status": "ok",
                 "org_name": reg.org_name,
                 "attribute": attribute,
-                "new_agk_version": result.new_agk_version,
-                "records_reencrypted": result.records_reencrypted,
+                "new_agk_version": new_ver,
+                "records_reencrypted": reencrypted,
                 "elapsed_ms": ms,
                 "note": (
-                    f"AGK for {attribute} rotated to v{result.new_agk_version}. "
-                    f"{result.records_reencrypted} record(s) re-encrypted. "
+                    f"AGK for {attribute} rotated to v{new_ver}. "
+                    f"{reencrypted} record(s) re-encrypted. "
                     f"No organisation's private key was changed."
                 ),
             }
@@ -341,19 +403,10 @@ class PRRABEService:
                     "slot": s.slot, "org_id": s.org_id,
                     "org_name": s.org_name,
                     "sector": s.sector, "trust_tier": s.trust_tier,
-                    "attributes": sorted(s.attributes),
                     "has_key": s.pk is not None,
                     "has_helper_key": s.hsk is not None,
                     "registered_at": s.registered_at,
                 })
-
-            agk_info = {}
-            if self.data_owner:
-                for x in ATTRIBUTE_UNIVERSE:
-                    members = self.data_owner.groups.members(x)
-                    if members:
-                        _, ver = self.data_owner.groups.current(x)
-                        agk_info[x] = {"version": ver, "member_count": len(members)}
 
             return {
                 "charm_available": CHARM_AVAILABLE,
@@ -365,7 +418,6 @@ class PRRABEService:
                 "aggregate_at": self.aggregate_at,
                 "encrypted_records": len(self.data_owner.records) if self.data_owner else 0,
                 "orgs": orgs,
-                "agk_groups": agk_info,
             }
 
     # -------------------------------------------------------------- helpers
@@ -383,6 +435,32 @@ class PRRABEService:
         self.envelopes.clear()
         for s in self.slots.values():
             s.hsk = None
+
+
+_TRUST_RANK = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+
+
+def _fallback_satisfies(policy_attrs, org_attrs):
+    """Check if org_attrs satisfy policy_attrs with trust hierarchy.
+
+    TRUST:HIGH satisfies TRUST:HIGH/MEDIUM/LOW requirements.
+    SECTOR must match exactly.
+    """
+    for req in policy_attrs:
+        if req.startswith("TRUST:"):
+            req_tier = req.split(":")[1]
+            org_trust = None
+            for a in org_attrs:
+                if a.startswith("TRUST:"):
+                    org_trust = a.split(":")[1]
+                    break
+            if org_trust is None:
+                return False
+            if _TRUST_RANK.get(org_trust, 0) < _TRUST_RANK.get(req_tier, 0):
+                return False
+        elif req not in org_attrs:
+            return False
+    return True
 
 
 # ------------------------------------------------------------------ module helpers

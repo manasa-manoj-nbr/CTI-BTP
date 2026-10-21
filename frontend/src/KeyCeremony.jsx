@@ -89,6 +89,22 @@ export default function KeyCeremony() {
     setBusy(false);
   };
 
+  const completeCeremony = async () => {
+    setBusy(true);
+    flash("");
+    const res = await fetch(`${API_BASE_URL}/api/prrabe/complete-ceremony`, {
+      method: "POST", headers: headers(),
+    });
+    const d = await res.json();
+    if (res.ok) {
+      flash(`Full ceremony completed! Init + ${d.keygen?.length || 0} orgs keygen + aggregate done.`);
+    } else {
+      flash(d.error || "Ceremony failed", true);
+    }
+    await load();
+    setBusy(false);
+  };
+
   if (loading) return <div className="kc-loading"><Loader2 className="spin" size={24} /> Loading ceremony status...</div>;
 
   const initialized = status?.initialized;
@@ -110,8 +126,22 @@ export default function KeyCeremony() {
       {actionErr && <div className="kc-flash error"><AlertCircle size={16} /> {actionErr}</div>}
 
       {!status?.charm_available && (
-        <div className="kc-flash error">
-          <AlertCircle size={16} /> charm-crypto not available. Start the backend on Linux / WSL for real PR-RABE.
+        <div className="kc-flash info">
+          <AlertCircle size={16} /> Running in AES-256 fallback mode (charm-crypto not available). Use Linux/WSL for real PR-RABE bilinear pairings.
+        </div>
+      )}
+
+      {orgs.length >= 2 && (
+        <div className="kc-card highlight" style={{ borderLeft: "4px solid var(--kc-primary, #6366f1)" }}>
+          <div className="kc-card-head">
+            <Zap size={18} />
+            <h3>Quick Setup</h3>
+          </div>
+          <p>{aggregated ? "Re-run the full ceremony (resets all keys and encrypted records)." : `Complete the entire ceremony in one step: initialise CRS, generate keys for all ${orgs.length} organisations, and aggregate.`}</p>
+          <button className="kc-btn primary" onClick={completeCeremony} disabled={busy}>
+            {busy ? <Loader2 className="spin" size={16} /> : <Zap size={16} />}
+            {aggregated ? "Reset & Re-run Ceremony" : "Complete Full Ceremony"}
+          </button>
         </div>
       )}
 
@@ -142,7 +172,7 @@ export default function KeyCeremony() {
             <span>Setup: {status.setup_at?.split("T")[0]}</span>
           </div>
         ) : (
-          <button className="kc-btn primary" onClick={initSystem} disabled={busy || !status?.charm_available || orgs.length < 2}>
+          <button className="kc-btn primary" onClick={initSystem} disabled={busy || orgs.length < 2}>
             {busy ? <Loader2 className="spin" size={16} /> : <Zap size={16} />}
             Initialise CRS ({orgs.length} slots)
           </button>
@@ -179,18 +209,22 @@ export default function KeyCeremony() {
                   {hasKey ? (
                     <div className="kc-org-meta">
                       <span>Slot {regInfo.slot}</span>
-                      <span>{regInfo.attributes?.join(", ")}</span>
+                      <span>Private attributes registered</span>
                       <span className="kc-badge done">Key ✓</span>
                     </div>
-                  ) : (
+                  ) : isMyOrg ? (
                     <button
                       className="kc-btn secondary"
                       onClick={() => genKey(org.id)}
                       disabled={busy || !initialized}
                     >
                       {busy ? <Loader2 className="spin" size={14} /> : <Key size={14} />}
-                      Generate Key Pair
+                      Generate My Key Pair
                     </button>
+                  ) : (
+                    <div className="kc-org-meta">
+                      <span className="kc-badge pending">Awaiting key from {org.name}</span>
+                    </div>
                   )}
                 </div>
               );

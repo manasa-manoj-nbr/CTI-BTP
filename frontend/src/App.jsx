@@ -272,12 +272,13 @@ function App() {
   // ------------------------------------------------
 
   function renderOrganizations() {
+    const myOrgId = user?.organization_id
     return (
       <section className="panel">
         <div className="panel-heading">
           <div>
             <h2 className="section-heading">Organizations</h2>
-            <p className="section-description">Click any organization to view its Threat Intelligence workspace.</p>
+            <p className="section-description">View registered organizations and their trust profiles. Click your own organization to open its workspace.</p>
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button
@@ -296,36 +297,49 @@ function App() {
 
         {organizations.length ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px', marginTop: '20px' }}>
-            {organizations.map((org, index) => (
-              <div
-                key={org.id ?? index}
-                onClick={() => handleSelectOrg(org)}
-                style={{
-                  padding: '20px', background: '#fff', border: '1px solid #e8e6f1',
-                  borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s',
-                  boxShadow: '0 2px 8px rgba(37, 35, 69, 0.04)'
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = '#7062e8'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(112, 98, 232, 0.15)' }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = '#e8e6f1'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(37, 35, 69, 0.04)' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                  <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#f0edff', display: 'grid', placeItems: 'center', color: '#7062e8' }}>
-                    <Building2 size={22} />
+            {organizations.map((org, index) => {
+              const isMine = myOrgId && org.id === myOrgId
+              return (
+                <div
+                  key={org.id ?? index}
+                  onClick={isMine ? () => handleSelectOrg(org) : undefined}
+                  style={{
+                    padding: '20px', background: '#fff', border: `1px solid ${isMine ? '#c4b5fd' : '#e8e6f1'}`,
+                    borderRadius: '12px', cursor: isMine ? 'pointer' : 'default', transition: 'all 0.2s',
+                    boxShadow: '0 2px 8px rgba(37, 35, 69, 0.04)',
+                    opacity: isMine ? 1 : 0.75,
+                  }}
+                  onMouseEnter={isMine ? e => { e.currentTarget.style.borderColor = '#7062e8'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(112, 98, 232, 0.15)' } : undefined}
+                  onMouseLeave={isMine ? e => { e.currentTarget.style.borderColor = '#c4b5fd'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(37, 35, 69, 0.04)' } : undefined}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: isMine ? '#f0edff' : '#f5f5f5', display: 'grid', placeItems: 'center', color: isMine ? '#7062e8' : '#999' }}>
+                      <Building2 size={22} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, color: '#292454', fontSize: '16px' }}>
+                        {org.name || 'Unnamed'}
+                        {isMine && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#7062e8', fontWeight: 600 }}>(Your Org)</span>}
+                      </h3>
+                      <span style={{ color: '#77758e', fontSize: '12px' }}>{org.sector || 'Sector N/A'}</span>
+                    </div>
                   </div>
-                  <div>
-                    <h3 style={{ margin: 0, color: '#292454', fontSize: '16px' }}>{org.name || 'Unnamed'}</h3>
-                    <span style={{ color: '#77758e', fontSize: '12px' }}>{org.sector || 'Sector N/A'}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#45435f', paddingTop: '12px', borderTop: '1px solid #f0eff6' }}>
+                    <span>Trust: <strong>{org.trust_score ?? 'N/A'}</strong></span>
+                    <span>Violations: <strong>{org.policy_violations ?? 0}</strong></span>
                   </div>
+                  {isMine ? (
+                    <div style={{ marginTop: '12px', textAlign: 'center', color: '#7062e8', fontSize: '12px', fontWeight: 600 }}>
+                      Click to open workspace →
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '12px', textAlign: 'center', color: '#94a3b8', fontSize: '11px', fontStyle: 'italic' }}>
+                      External organization
+                    </div>
+                  )}
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#45435f', paddingTop: '12px', borderTop: '1px solid #f0eff6' }}>
-                  <span>Trust: <strong>{org.trust_score ?? 'N/A'}</strong></span>
-                  <span>Violations: <strong>{org.policy_violations ?? 0}</strong></span>
-                </div>
-                <div style={{ marginTop: '12px', textAlign: 'center', color: '#7062e8', fontSize: '12px', fontWeight: 600 }}>
-                  Click to open workspace →
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <div className="empty-state" style={{ marginTop: '20px' }}>
