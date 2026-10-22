@@ -678,19 +678,17 @@ def crypto_encrypt():
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (
                     cti_record_id, ciphertext,
-                    policy_string or " AND ".join(sorted(policy.values())) if isinstance(policy, dict) else str(policy),
+                    "Hidden (PR-RABE policy hiding)",
                     sensitivity,
-                    json.dumps(reasons) if reasons else None,
+                    None,
                     user["id"], user["organization_id"],
                 ))
         except Exception:
             pass
 
-    result = {"ciphertext": ciphertext}
+    result = {"ciphertext": ciphertext, "policy_hidden": True}
     if policy_string:
-        result["generated_policy"] = _hide_stored_policy(policy_string)
         result["sensitivity"] = sensitivity
-        result["classification"] = reasons
     return jsonify(result), 200
 
 @app.route("/api/crypto/encrypted", methods=["GET"])
@@ -952,7 +950,7 @@ def prrabe_encrypt():
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (
                     record_id, "prrabe",
-                    policy_string, None, None,
+                    "Hidden (PR-RABE policy hiding)", None, None,
                     user["id"], user["organization_id"],
                 ))
         except Exception:

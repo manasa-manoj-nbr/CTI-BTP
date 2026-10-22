@@ -140,7 +140,7 @@ export default function CryptoSharing() {
           elapsed_ms: data.elapsed_ms,
         });
       } else {
-        setErrorMsg(data.reason || data.error || "Organization does not satisfy the access requirements.");
+        setErrorMsg("Your organization does not satisfy the hidden access policy.");
       }
     } catch (e) {
       setErrorMsg(`Decryption failed: ${e.message}`);
@@ -169,7 +169,7 @@ export default function CryptoSharing() {
         setErrorMsg("");
         setDecryptedData(null);
         setDecryptMeta(null);
-        setEncryptMsg(`Attribute revoked. AGK rotated to v${data.new_agk_version}. ${data.records_reencrypted} record(s) re-encrypted.`);
+        setEncryptMsg(`Attribute revoked. AGK rotated. ${data.records_reencrypted} record(s) re-encrypted.`);
         const statusRes = await fetch(`${API_BASE_URL}/api/prrabe/status`, { headers });
         if (statusRes.ok) setPrrabeStatus(await statusRes.json());
       } else {
@@ -251,15 +251,15 @@ export default function CryptoSharing() {
             )}
 
             <label>
-              Policy — Sector Restriction
+              Sector Restriction
               <select value={policySector} onChange={e => setPolicySector(e.target.value)}>
                 <option value="All">Auto (based on severity)</option>
-                <option value="Finance">SECTOR:FINANCE</option>
-                <option value="Healthcare">SECTOR:HEALTHCARE</option>
-                <option value="Education">SECTOR:EDUCATION</option>
-                <option value="Technology">SECTOR:TECHNOLOGY</option>
-                <option value="Government">SECTOR:GOVERNMENT</option>
-                <option value="Energy">SECTOR:ENERGY</option>
+                <option value="Finance">Finance only</option>
+                <option value="Healthcare">Healthcare only</option>
+                <option value="Education">Education only</option>
+                <option value="Technology">Technology only</option>
+                <option value="Government">Government only</option>
+                <option value="Energy">Energy only</option>
               </select>
             </label>
 

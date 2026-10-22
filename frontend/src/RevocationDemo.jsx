@@ -150,18 +150,26 @@ export default function RevocationDemo() {
             </select>
           </label>
           <label>
-            Access Policy (LSSS)
+            Access Policy
             <select value={selectedPolicy} onChange={e => setSelectedPolicy(e.target.value)}>
               <option value="">Select...</option>
               {(() => {
-                const sectors = ["FINANCE", "HEALTHCARE", "EDUCATION", "TECHNOLOGY", "GOVERNMENT", "ENERGY"];
+                const sectors = [
+                  { key: "FINANCE", label: "Finance" },
+                  { key: "HEALTHCARE", label: "Healthcare" },
+                  { key: "EDUCATION", label: "Education" },
+                  { key: "TECHNOLOGY", label: "Technology" },
+                  { key: "GOVERNMENT", label: "Government" },
+                  { key: "ENERGY", label: "Energy" },
+                ];
                 const policies = [];
                 for (const s of sectors) {
-                  policies.push(`(SECTOR:${s} AND TRUST:HIGH)`);
-                  policies.push(`(SECTOR:${s} AND TRUST:MEDIUM)`);
+                  policies.push({ value: `(SECTOR:${s.key} AND TRUST:HIGH)`, label: `${s.label} — High trust required` });
+                  policies.push({ value: `(SECTOR:${s.key} AND TRUST:MEDIUM)`, label: `${s.label} — Medium trust required` });
                 }
-                policies.push("(TRUST:HIGH)", "(TRUST:MEDIUM)");
-                return policies.map(p => <option key={p} value={p}>{p.replace(/[()]/g, "")}</option>);
+                policies.push({ value: "(TRUST:HIGH)", label: "Any sector — High trust required" });
+                policies.push({ value: "(TRUST:MEDIUM)", label: "Any sector — Medium trust required" });
+                return policies.map(p => <option key={p.value} value={p.value}>{p.label}</option>);
               })()}
             </select>
           </label>
@@ -234,12 +242,9 @@ export default function RevocationDemo() {
             <label>
               Attribute to Revoke
               <select value={revokeAttr} onChange={e => setRevokeAttr(e.target.value)}>
-              {(() => {
-                const allAttrs = new Set();
-                orgList.forEach(o => (o.attributes || []).forEach(a => allAttrs.add(a)));
-                ["TRUST:HIGH", "TRUST:MEDIUM", "TRUST:LOW"].forEach(a => allAttrs.add(a));
-                return [...allAttrs].sort().map(a => <option key={a} value={a}>{a}</option>);
-              })()}
+                <option value="TRUST:HIGH">High trust access</option>
+                <option value="TRUST:MEDIUM">Medium trust access</option>
+                <option value="TRUST:LOW">Low trust access</option>
               </select>
             </label>
             <button className="rd-btn danger" onClick={doRevoke} disabled={busy || !revokeOrgId}>

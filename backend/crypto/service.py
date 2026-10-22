@@ -124,7 +124,7 @@ class PRRABEService:
                 return {
                     "status": "already_registered",
                     "slot": s.slot,
-                    "attributes": sorted(s.attributes),
+                    "attribute_count": len(s.attributes),
                 }
 
             slot = self._next_free_slot()
@@ -168,7 +168,7 @@ class PRRABEService:
             return {
                 "status": "ok",
                 "slot": slot,
-                "attributes": sorted(attrs),
+                "attribute_count": len(attrs),
                 "is_valid": True,
                 "elapsed_ms": ms,
                 "registered": len(self.slots),
@@ -226,7 +226,7 @@ class PRRABEService:
                 "note": "Aggregate is deterministic — Key Curator holds no secrets. Anyone can verify.",
                 "orgs": [
                     {"slot": i, "name": self.slots[i].org_name,
-                     "attributes": sorted(self.slots[i].attributes)}
+                     "attribute_count": len(self.slots[i].attributes)}
                     for i in range(self.num_slots)
                 ],
             }
@@ -381,12 +381,11 @@ class PRRABEService:
             return {
                 "status": "ok",
                 "org_name": reg.org_name,
-                "attribute": attribute,
                 "new_agk_version": new_ver,
                 "records_reencrypted": reencrypted,
                 "elapsed_ms": ms,
                 "note": (
-                    f"AGK for {attribute} rotated to v{new_ver}. "
+                    f"AGK rotated to v{new_ver}. "
                     f"{reencrypted} record(s) re-encrypted. "
                     f"No organisation's private key was changed."
                 ),
@@ -402,7 +401,6 @@ class PRRABEService:
                 orgs.append({
                     "slot": s.slot, "org_id": s.org_id,
                     "org_name": s.org_name,
-                    "sector": s.sector, "trust_tier": s.trust_tier,
                     "has_key": s.pk is not None,
                     "has_helper_key": s.hsk is not None,
                     "registered_at": s.registered_at,

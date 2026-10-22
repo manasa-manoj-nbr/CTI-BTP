@@ -203,7 +203,7 @@ export default function KeyCeremony() {
                     <div className="kc-org-icon">{hasKey ? <CheckCircle2 size={20} /> : <Key size={20} />}</div>
                     <div>
                       <strong>{org.name}{isMyOrg ? " (You)" : ""}</strong>
-                      <small>{org.sector} · Trust: {org.trust_score}</small>
+                      <small>{org.sector}</small>
                     </div>
                   </div>
                   {hasKey ? (
@@ -267,11 +267,11 @@ export default function KeyCeremony() {
               <div className="kc-agk-table">
                 <h4>Attribute Group Keys</h4>
                 <table>
-                  <thead><tr><th>Attribute</th><th>Version</th><th>Members</th></tr></thead>
+                  <thead><tr><th>Group</th><th>Version</th><th>Members</th></tr></thead>
                   <tbody>
-                    {Object.entries(status.agk_groups).map(([attr, info]) => (
+                    {Object.entries(status.agk_groups).map(([attr, info], idx) => (
                       <tr key={attr}>
-                        <td><code>{attr}</code></td>
+                        <td>AGK-{idx + 1}</td>
                         <td>v{info.version}</td>
                         <td>{info.member_count}</td>
                       </tr>

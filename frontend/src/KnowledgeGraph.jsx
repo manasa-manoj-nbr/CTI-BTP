@@ -67,8 +67,20 @@ export default function KnowledgeGraph({ orgContext }) {
   const [search, setSearch] = useState("");
   const [nodeFilter, setNodeFilter] = useState("all");
   const [hoverNode, setHoverNode] = useState(null);
-  
+  const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
+
   const fgRef = useRef();
+  const roRef = useRef();
+  const canvasWrapperRef = useCallback((el) => {
+    if (roRef.current) roRef.current.disconnect();
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) setCanvasSize({ width, height });
+    });
+    ro.observe(el);
+    roRef.current = ro;
+  }, []);
 
   const loadGraph = useCallback(async () => {
     setLoading(true);
@@ -107,6 +119,7 @@ export default function KnowledgeGraph({ orgContext }) {
       setTimeout(() => fgRef.current.zoomToFit(400, 100), 1000);
     }
   }, [graphData]);
+
 
   const filteredData = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -208,10 +221,12 @@ export default function KnowledgeGraph({ orgContext }) {
       )}
 
       <div className="kg-layout">
-        <div className="kg-panel kg-canvas-wrapper">
+        <div className="kg-panel kg-canvas-wrapper" ref={canvasWrapperRef}>
           <ForceGraph2D
             ref={fgRef}
             graphData={filteredData}
+            width={canvasSize.width}
+            height={canvasSize.height}
             nodeLabel="label"
             d3VelocityDecay={0.15}
             d3AlphaDecay={0.015}

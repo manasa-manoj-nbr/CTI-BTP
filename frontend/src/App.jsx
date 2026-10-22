@@ -325,8 +325,14 @@ function App() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#45435f', paddingTop: '12px', borderTop: '1px solid #f0eff6' }}>
-                    <span>Trust: <strong>{org.trust_score ?? 'N/A'}</strong></span>
-                    <span>Violations: <strong>{org.policy_violations ?? 0}</strong></span>
+                    {isMine ? (
+                      <>
+                        <span>Trust: <strong>{org.trust_score ?? 'N/A'}</strong></span>
+                        <span>Violations: <strong>{org.policy_violations ?? 0}</strong></span>
+                      </>
+                    ) : (
+                      <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Trust profile private</span>
+                    )}
                   </div>
                   {isMine ? (
                     <div style={{ marginTop: '12px', textAlign: 'center', color: '#7062e8', fontSize: '12px', fontWeight: 600 }}>
